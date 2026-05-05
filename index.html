@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALF 태스크 빌더</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; display: flex; height: 100vh; }
+
+    /* 사이드바 */
+    .sidebar { width: 220px; background: #1c1c1e; padding: 24px 16px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+    .sidebar-title { color: #fff; font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .step-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; color: #8e8e93; font-size: 14px; transition: background 0.2s; }
+    .step-item.active { background: #2c2c2e; color: #fff; }
+    .step-item.done { color: #30d158; }
+    .step-icon { width: 24px; height: 24px; border-radius: 50%; border: 2px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .step-item.done .step-icon { background: #30d158; border-color: #30d158; color: #fff; }
+    .step-item.active .step-icon { border-color: #0a84ff; color: #0a84ff; }
+
+    /* 메인 */
+    .main { flex: 1; overflow-y: auto; padding: 40px; }
+    .card { background: #fff; border-radius: 16px; padding: 32px; max-width: 760px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .card p.desc { color: #6e6e73; font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
+
+    /* 공통 컴포넌트 */
+    .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #0a84ff; color: #fff; }
+    .btn-secondary { background: #e5e5ea; color: #1c1c1e; }
+    .btn-success { background: #30d158; color: #fff; }
+    textarea { width: 100%; padding: 12px; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 14px; resize: vertical; font-family: inherit; line-height: 1.6; }
+    .tab-group { display: flex; gap: 4px; margin-bottom: 20px; background: #f2f2f7; padding: 4px; border-radius: 8px; width: fit-content; }
+    .tab { padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #6e6e73; }
+    .tab.active { background: #fff; color: #1c1c1e; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .input-field { width: 100%; padding: 10px 14px; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+    .tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .tag-blue { background: #e3f0ff; color: #0a84ff; }
+    .loading { display: flex; align-items: center; gap: 10px; color: #6e6e73; font-size: 14px; padding: 20px 0; }
+    .spinner { width: 20px; height: 20px; border: 2px solid #e5e5ea; border-top-color: #0a84ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box { background: #fff0f0; border: 1px solid #ffb3b3; border-radius: 8px; padding: 12px 16px; color: #c00; font-size: 13px; margin-bottom: 16px; }
+
+    /* 설정 오버레이 */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .overlay.hidden { display: none; }
+    .overlay-card { background: #fff; border-radius: 16px; padding: 32px; width: 440px; }
+    .overlay-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .overlay-card p { color: #6e6e73; font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
+    .label { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: block; }
+  </style>
+</head>
+<body>
+
+<!-- 설정 오버레이 -->
+<div class="overlay" id="settingsOverlay">
+  <div class="overlay-card">
+    <h3>⚙️ 초기 설정</h3>
+    <p>Claude API Key를 입력해주세요. 브라우저에만 저장되며 외부로 전송되지 않아요.</p>
+    <label class="label">Claude API Key</label>
+    <input class="input-field" type="password" id="claudeKeyInput" placeholder="sk-ant-...">
+    <label class="label" style="margin-top:12px">n8n 채널톡 프록시 웹훅 URL <span style="color:#8e8e93;font-weight:400">(선택 — 자동 로그 가져오기 시 필요)</span></label>
+    <input class="input-field" type="text" id="n8nUrlInput" placeholder="https://n8n-webhook.datarize.io/webhook/...">
+    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveSettings()">저장하고 시작하기</button>
+  </div>
+</div>
+
+<!-- 사이드바 -->
+<div class="sidebar">
+  <div class="sidebar-title">⚡ ALF 태스크 빌더</div>
+  <div class="step-item" id="nav-1" onclick="goToStep(1)">
+    <div class="step-icon">1</div><span>데이터 수집</span>
+  </div>
+  <div class="step-item" id="nav-2" onclick="goToStep(2)">
+    <div class="step-icon">2</div><span>분석</span>
+  </div>
+  <div class="step-item" id="nav-3" onclick="goToStep(3)">
+    <div class="step-icon">3</div><span>SOP 제작</span>
+  </div>
+  <div class="step-item" id="nav-4" onclick="goToStep(4)">
+    <div class="step-icon">4</div><span>상담 흐름도</span>
+  </div>
+  <div class="step-item" id="nav-5" onclick="goToStep(5)">
+    <div class="step-icon">5</div><span>JSON 내보내기</span>
+  </div>
+  <div style="margin-top:auto">
+    <button class="btn btn-secondary" style="width:100%;font-size:12px" onclick="openSettings()">⚙️ 설정</button>
+  </div>
+</div>
+
+<!-- 메인 -->
+<div class="main" id="mainArea"></div>
+
+<script>
+// ── 상태 ──────────────────────────────────────────────
+const state = {
+  currentStep: 1,
+  completedSteps: new Set(),
+  collectionMode: 'manual',
+  rawLogs: '',
+  candidates: [],
+  selectedCandidate: null,
+  sop: '',
+  mermaidCode: '',
+  taskJson: null,
+};
+
+// ── 설정 ──────────────────────────────────────────────
+function getClaudeKey() { return localStorage.getItem('claudeApiKey') || ''; }
+function getN8nUrl()    { return localStorage.getItem('n8nProxyUrl') || ''; }
+
+function saveSettings() {
+  const key = document.getElementById('claudeKeyInput').value.trim();
+  const url = document.getElementById('n8nUrlInput').value.trim();
+  if (!key) { alert('Claude API Key를 입력해주세요.'); return; }
+  localStorage.setItem('claudeApiKey', key);
+  if (url) localStorage.setItem('n8nProxyUrl', url);
+  document.getElementById('settingsOverlay').classList.add('hidden');
+  renderStep(state.currentStep);
+}
+
+function openSettings() {
+  document.getElementById('claudeKeyInput').value = getClaudeKey();
+  document.getElementById('n8nUrlInput').value = getN8nUrl();
+  document.getElementById('settingsOverlay').classList.remove('hidden');
+}
+
+// ── 네비게이션 ────────────────────────────────────────
+function goToStep(n) {
+  if (n > 1 && !state.completedSteps.has(n - 1) && n !== state.currentStep) return;
+  state.currentStep = n;
+  renderNav();
+  renderStep(n);
+}
+
+function nextStep() {
+  state.completedSteps.add(state.currentStep);
+  goToStep(state.currentStep + 1);
+}
+
+function renderNav() {
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById('nav-' + i);
+    el.className = 'step-item';
+    const icon = el.querySelector('.step-icon');
+    if (state.completedSteps.has(i)) {
+      el.classList.add('done');
+      icon.textContent = '✓';
+    } else if (i === state.currentStep) {
+      el.classList.add('active');
+      icon.textContent = i;
+    } else {
+      icon.textContent = i;
+    }
+  }
+}
+
+// ── Claude API 호출 ───────────────────────────────────
+async function callClaude(systemPrompt, userMessage) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': getClaudeKey(),
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-calls': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API 오류 (${res.status})`);
+  }
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+// ── 채널톡 대화 로그 가져오기 (n8n 프록시) ────────────
+async function fetchChannelTalkLogs() {
+  const url = getN8nUrl();
+  if (!url) throw new Error('n8n 프록시 URL이 설정되지 않았어요. 설정에서 입력해주세요.');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'getLogs' }),
+  });
+  if (!res.ok) throw new Error('대화 로그 가져오기 실패');
+  const data = await res.json();
+  return data.logs || '';
+}
+
+// ── 단계별 렌더 ───────────────────────────────────────
+function renderStep(n) {
+  const steps = [null, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5];
+  document.getElementById('mainArea').innerHTML = '';
+  steps[n]();
+}
+
+// ── 1단계: 데이터 수집 ────────────────────────────────
+function renderStep1() {
+  document.getElementById('mainArea').innerHTML = `
+    <div class="card">
+      <h2>1. 데이터 수집</h2>
+      <p class="desc">채널톡 대화 로그를 가져오거나, 자동화하고 싶은 문의 유형을 직접 입력해주세요.</p>
+      <div class="tab-group">
+        <div class="tab ${state.collectionMode==='auto'?'active':''}" onclick="setTab(event,'auto')">자동 가져오기</div>
+        <div class="tab ${state.collectionMode==='manual'?'active':''}" onclick="setTab(event,'manual')">직접 입력</div>
+      </div>
+      <div id="tabContent"></div>
+    </div>`;
+  renderTabContent();
+}
+
+function setTab(e, mode) {
+  state.collectionMode = mode;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  e.target.classList.add('active');
+  renderTabContent();
+}
+
+function renderTabContent() {
+  const el = document.getElementById('tabContent');
+  if (state.collectionMode === 'auto') {
+    el.innerHTML = `
+      <p style="color:#6e6e73;font-size:13px;margin-bottom:16px">채널톡 Open API를 통해 최근 상담 로그를 자동으로 가져옵니다. n8n 프록시 URL이 설정되어 있어야 해요.</p>
+      <button class="btn btn-primary" onclick="autoFetch()">대화 로그 가져오기</button>
+      <div id="autoResult" style="margin-top:16px"></div>`;
+  } else {
+    el.innerHTML = `
+      <p style="color:#6e6e73;font-size:13px;margin-bottom:12px">자동화하고 싶은 문의 유형이나 실제 고객 문의 내용을 자유롭게 입력해주세요.</p>
+      <textarea id="manualInput" rows="8" placeholder="예시:&#10;- 발송주기 변경해달라는 요청이 매주 3~4건 들어옴&#10;- 카카오 알림톡 템플릿 검수 절차를 매번 설명해야 함&#10;- 캠페인 일시정지 요청이 반복됨">${state.rawLogs}</textarea>
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn btn-primary" onclick="submitManual()">다음 단계로 →</button>
+      </div>`;
+  }
+}
+
+async function autoFetch() {
+  document.getElementById('autoResult').innerHTML = '<div class="loading"><div class="spinner"></div>대화 로그 가져오는 중...</div>';
+  try {
+    state.rawLogs = await fetchChannelTalkLogs();
+    document.getElementById('autoResult').innerHTML = `
+      <div style="background:#f0f9f0;border-radius:8px;padding:12px;font-size:13px;color:#1a7f37">✅ 로그 가져오기 완료</div>
+      <div style="margin-top:16px;text-align:right"><button class="btn btn-primary" onclick="nextStep()">다음 단계로 →</button></div>`;
+  } catch(e) {
+    document.getElementById('autoResult').innerHTML = `<div class="error-box">${e.message}</div>`;
+  }
+}
+
+function submitManual() {
+  const val = document.getElementById('manualInput').value.trim();
+  if (!val) { alert('내용을 입력해주세요.'); return; }
+  state.rawLogs = val;
+  nextStep();
+}
+
+// ── 2단계: 분석 ───────────────────────────────────────
+function renderStep2() {
+  document.getElementById('mainArea').innerHTML = `
+    <div class="card">
+      <h2>2. 분석</h2>
+      <p class="desc">입력하신 내용에서 CX팀 개입이 필요했던 자동화 후보를 추출합니다.</p>
+      <div id="analysisArea"><div class="loading"><div class="spinner"></div>Claude가 분석 중이에요...</div></div>
+    </div>`;
+  runAnalysis();
+}
+
+async function runAnalysis() {
+  try {
+    const system = `당신은 CX 자동화 전문가입니다. 고객 문의 로그나 설명을 분석해서 채널톡 ALF 태스크로 자동화할 수 있는 후보를 찾아냅니다.
+
+분석 기준 (우선순위순):
+1. 상담원이 직접 개입하거나 내부 시스템을 조작해야 했던 요청
+2. "~해주세요", "~변경해주세요" 같은 요청형 문의가 반복되는 것
+
+응답은 반드시 아래 JSON 형식으로만 하세요 (다른 텍스트 없이):
+[
+  {"title": "자동화 후보 이름 (15자 이내)", "count": "주 N건", "example": "대표 문의 예시 문장"}
+]
+최대 5개까지만 추출하세요.`;
+
+    const raw = await callClaude(system, `다음 내용을 분석해주세요:\n\n${state.rawLogs}`);
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('분석 결과를 파싱할 수 없어요. 다시 시도해주세요.');
+    state.candidates = JSON.parse(jsonMatch[0]).map(c => ({ ...c, selected: false }));
+    renderCandidates();
+  } catch(e) {
+    document.getElementById('analysisArea').innerHTML = `
+      <div class="error-box">${e.message}</div>
+      <button class="btn btn-secondary" onclick="runAnalysis()">다시 시도</button>`;
+  }
+}
+
+function renderCandidates() {
+  const el = document.getElementById('analysisArea');
+  if (!state.candidates.length) {
+    el.innerHTML = '<div class="error-box">자동화 후보를 찾지 못했어요. 더 자세한 내용을 입력하고 다시 시도해주세요.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <p style="font-size:13px;color:#6e6e73;margin-bottom:16px">태스크로 만들 항목 하나를 선택하세요.</p>
+    ${state.candidates.map((c, i) => `
+      <div id="card-${i}" onclick="selectCandidate(${i})" style="border:2px solid #e5e5ea;border-radius:12px;padding:16px;margin-bottom:12px;cursor:pointer;transition:border-color 0.2s">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+          <strong style="font-size:15px">${c.title}</strong>
+          <span class="tag tag-blue">${c.count}</span>
+        </div>
+        <p style="font-size:13px;color:#6e6e73;margin:0">"${c.example}"</p>
+      </div>`).join('')}
+    <div style="text-align:right;margin-top:8px">
+      <button class="btn btn-primary" onclick="proceedToSOP()">SOP 생성하기 →</button>
+    </div>`;
+}
+
+function selectCandidate(i) {
+  state.candidates.forEach((c, idx) => c.selected = idx === i);
+  state.selectedCandidate = state.candidates[i];
+  document.querySelectorAll('[id^="card-"]').forEach((el, idx) => {
+    el.style.borderColor = idx === i ? '#0a84ff' : '#e5e5ea';
+  });
+}
+
+function proceedToSOP() {
+  if (!state.selectedCandidate) { alert('항목을 선택해주세요.'); return; }
+  nextStep();
+}
+
+// ── 3단계: SOP 제작 ───────────────────────────────────
+function renderStep3() {
+  document.getElementById('mainArea').innerHTML = `
+    <div class="card">
+      <h2>3. SOP 제작</h2>
+      <p class="desc"><strong>${state.selectedCandidate.title}</strong>의 상담 절차를 자동 생성합니다. 내용을 수정할 수 있어요.</p>
+      <div id="sopArea"><div class="loading"><div class="spinner"></div>SOP 초안 생성 중...</div></div>
+    </div>`;
+  generateSOP();
+}
+
+async function generateSOP() {
+  try {
+    const system = `당신은 CX 운영 전문가입니다. 주어진 자동화 후보에 대해 채널톡 ALF 태스크의 SOP(표준 운영 절차)를 작성합니다.
+
+SOP 형식:
+## [태스크 이름]
+
+**트리거:** 언제 이 태스크가 실행되는지 (한 문장)
+
+**대화 흐름:**
+STEP 1. [단계명]
+- 에이전트 멘트 예시
+- 수집할 정보 (있는 경우)
+
+STEP 2. [단계명]
+...
+
+**완료 조건:** 언제 태스크가 종료되는지
+**예외 처리:** 처리 불가 상황 시 대응 방법
+
+이 태스크는 Datarize CX팀의 채널톡 ALF 챗봇용입니다. 고객사(이커머스 기업) 담당자가 사용합니다.`;
+
+    const raw = await callClaude(system, `다음 자동화 후보의 SOP를 작성해주세요:\n\n제목: ${state.selectedCandidate.title}\n대표 문의: "${state.selectedCandidate.example}"`);
+    state.sop = raw;
+    document.getElementById('sopArea').innerHTML = `
+      <textarea id="sopEditor" rows="16">${state.sop}</textarea>
+      <div style="text-align:right;margin-top:16px">
+        <button class="btn btn-primary" onclick="proceedToFlowchart()">흐름도 생성하기 →</button>
+      </div>`;
+  } catch(e) {
+    document.getElementById('sopArea').innerHTML = `
+      <div class="error-box">${e.message}</div>
+      <button class="btn btn-secondary" onclick="generateSOP()">다시 시도</button>`;
+  }
+}
+
+function proceedToFlowchart() {
+  state.sop = document.getElementById('sopEditor').value;
+  nextStep();
+}
+
+// ── 4단계: 상담 흐름도 ────────────────────────────────
+function renderStep4() {
+  document.getElementById('mainArea').innerHTML = `
+    <div class="card">
+      <h2>4. 상담 흐름도</h2>
+      <p class="desc">SOP를 기반으로 상담 흐름도를 시각화합니다.</p>
+      <div id="flowArea"><div class="loading"><div class="spinner"></div>흐름도 생성 중...</div></div>
+    </div>`;
+  generateFlowchart();
+}
+
+async function generateFlowchart() {
+  try {
+    const system = `당신은 Mermaid.js 전문가입니다. 주어진 SOP를 Mermaid flowchart 코드로 변환합니다.
+
+규칙:
+- 반드시 "flowchart TD" 로 시작
+- 노드 텍스트는 한국어
+- 다이아몬드(菱形)는 판단/분기에만 사용
+- 최대 10개 노드
+- mermaid 코드만 출력 (코드블록 마커 없이)`;
+
+    const raw = await callClaude(system, `다음 SOP를 Mermaid flowchart로 변환해주세요:\n\n${state.sop}`);
+    state.mermaidCode = raw.replace(/```mermaid\n?/g, '').replace(/```\n?/g, '').trim();
+    await renderMermaid();
+  } catch(e) {
+    document.getElementById('flowArea').innerHTML = `
+      <div class="error-box">${e.message}</div>
+      <button class="btn btn-secondary" onclick="generateFlowchart()">다시 시도</button>`;
+  }
+}
+
+async function renderMermaid() {
+  document.getElementById('flowArea').innerHTML = `
+    <div id="mermaidBox" style="background:#f9f9fb;border-radius:8px;padding:24px;text-align:center;min-height:200px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="generateFlowchart()">재생성</button>
+      <button class="btn btn-primary" onclick="nextStep()">JSON 생성하기 →</button>
+    </div>`;
+  try {
+    const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), state.mermaidCode);
+    document.getElementById('mermaidBox').innerHTML = svg;
+  } catch(e) {
+    document.getElementById('mermaidBox').innerHTML = `<div class="error-box">흐름도 렌더링 오류: ${e.message}<br><small>SOP를 수정하거나 재생성을 눌러주세요.</small></div>`;
+  }
+}
+
+// ── 5단계: JSON 내보내기 ──────────────────────────────
+function renderStep5() {
+  document.getElementById('mainArea').innerHTML = `
+    <div class="card">
+      <h2>5. JSON 내보내기</h2>
+      <p class="desc">채널톡 태스크 JSON 파일을 생성합니다. 다운로드 후 채널톡 태스크 편집기에서 가져오기 하세요.</p>
+      <div id="jsonArea"><div class="loading"><div class="spinner"></div>JSON 생성 중...</div></div>
+    </div>`;
+  generateTaskJSON();
+}
+
+async function generateTaskJSON() {
+  try {
+    const system = `당신은 채널톡 ALF 태스크 전문가입니다. SOP를 기반으로 채널톡 태스크 JSON을 생성합니다.
+
+채널톡 태스크 JSON 형식 (이 형식 그대로 출력):
+{
+  "task": {
+    "name": "태스크 이름",
+    "trigger": "고객이 [상황]일 때 이 태스크를 실행합니다.",
+    "filter": { "and": [] },
+    "memorySchema": [],
+    "nodes": [
+      {
+        "id": "id-node-a",
+        "key": "A",
+        "name": "에이전트 지시문",
+        "type": "agent",
+        "instruction": "여기에 SOP 전체 내용을 에이전트 지시문 형태로 상세히 작성",
+        "next": { "type": "goto", "to": "END_TASK" }
+      }
+    ],
+    "startNodeId": "id-node-a"
+  }
+}
+
+규칙:
+- type은 "agent"만 사용
+- instruction에 [역할], [대화 흐름], [완료 조건], [예외 처리] 포함
+- trigger는 자연어로 구체적으로 작성
+- JSON만 출력 (설명 없이)`;
+
+    const raw = await callClaude(system, `다음 SOP로 채널톡 태스크 JSON을 생성해주세요:\n\n${state.sop}`);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('JSON 파싱 실패. 다시 시도해주세요.');
+    state.taskJson = JSON.parse(jsonMatch[0]);
+    renderJSONResult();
+  } catch(e) {
+    document.getElementById('jsonArea').innerHTML = `
+      <div class="error-box">${e.message}</div>
+      <button class="btn btn-secondary" onclick="generateTaskJSON()">다시 시도</button>`;
+  }
+}
+
+function renderJSONResult() {
+  const pretty = JSON.stringify(state.taskJson, null, 2);
+  document.getElementById('jsonArea').innerHTML = `
+    <div style="background:#1c1c1e;border-radius:8px;padding:20px;margin-bottom:20px;overflow:auto;max-height:360px">
+      <pre style="color:#e5e5ea;font-size:12px;line-height:1.6;margin:0;white-space:pre-wrap">${escapeHtml(pretty)}</pre>
+    </div>
+    <div style="background:#f0f9f0;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.8">
+      <strong>📋 채널톡 업로드 방법</strong><br>
+      1. 채널톡 어드민 → AI → 태스크 → + 새 태스크<br>
+      2. 우측 상단 ··· → <strong>JSON 가져오기</strong><br>
+      3. 다운로드한 파일 선택
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="generateTaskJSON()">재생성</button>
+      <button class="btn btn-success" onclick="downloadJSON()">⬇ JSON 다운로드</button>
+    </div>`;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function downloadJSON() {
+  const name = state.taskJson?.task?.name || '태스크';
+  const blob = new Blob([JSON.stringify(state.taskJson, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `채널톡_태스크_${name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── 초기화 ────────────────────────────────────────────
+mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+if (!getClaudeKey()) {
+  document.getElementById('settingsOverlay').classList.remove('hidden');
+} else {
+  document.getElementById('settingsOverlay').classList.add('hidden');
+}
+
+renderNav();
+renderStep(1);
+</script>
+</body>
+</html>
