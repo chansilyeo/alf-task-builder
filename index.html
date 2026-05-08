@@ -58,9 +58,13 @@
 <div class="overlay" id="settingsOverlay">
   <div class="overlay-card">
     <h3>⚙️ 초기 설정</h3>
-    <p>Claude API Key를 입력해주세요. 브라우저에만 저장되며 외부로 전송되지 않아요.</p>
-    <label class="label">Claude API Key</label>
-    <input class="input-field" type="password" id="claudeKeyInput" placeholder="sk-ant-...">
+    <p>Azure OpenAI 접속 정보를 입력해주세요. 브라우저에만 저장되며 외부로 전송되지 않아요.</p>
+    <label class="label">Azure OpenAI Endpoint URL</label>
+    <input class="input-field" type="text" id="azureEndpointInput" placeholder="https://xxxxx.openai.azure.com">
+    <label class="label" style="margin-top:4px">Deployment Name (모델명)</label>
+    <input class="input-field" type="text" id="azureDeploymentInput" placeholder="gpt-4o">
+    <label class="label" style="margin-top:4px">Azure API Key</label>
+    <input class="input-field" type="password" id="azureKeyInput" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
     <label class="label" style="margin-top:12px">n8n 채널톡 프록시 웹훅 URL <span style="color:#8e8e93;font-weight:400">(선택 — 자동 로그 가져오기 시 필요)</span></label>
     <input class="input-field" type="text" id="n8nUrlInput" placeholder="https://n8n-webhook.datarize.io/webhook/...">
     <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveSettings()">저장하고 시작하기</button>
@@ -108,22 +112,32 @@ const state = {
 };
 
 // ── 설정 ──────────────────────────────────────────────
-function getClaudeKey() { return localStorage.getItem('claudeApiKey') || ''; }
-function getN8nUrl()    { return localStorage.getItem('n8nProxyUrl') || ''; }
+function getAzureEndpoint()   { return localStorage.getItem('azureEndpoint') || ''; }
+function getAzureDeployment() { return localStorage.getItem('azureDeployment') || ''; }
+function getAzureKey()        { return localStorage.getItem('azureApiKey') || ''; }
+function getN8nUrl()          { return localStorage.getItem('n8nProxyUrl') || ''; }
 
 function saveSettings() {
-  const key = document.getElementById('claudeKeyInput').value.trim();
-  const url = document.getElementById('n8nUrlInput').value.trim();
-  if (!key) { alert('Claude API Key를 입력해주세요.'); return; }
-  localStorage.setItem('claudeApiKey', key);
+  const endpoint   = document.getElementById('azureEndpointInput').value.trim().replace(/\/$/, '');
+  const deployment = document.getElementById('azureDeploymentInput').value.trim();
+  const key        = document.getElementById('azureKeyInput').value.trim();
+  const url        = document.getElementById('n8nUrlInput').value.trim();
+  if (!endpoint)   { alert('Azure Endpoint URL을 입력해주세요.'); return; }
+  if (!deployment) { alert('Deployment Name을 입력해주세요.'); return; }
+  if (!key)        { alert('Azure API Key를 입력해주세요.'); return; }
+  localStorage.setItem('azureEndpoint', endpoint);
+  localStorage.setItem('azureDeployment', deployment);
+  localStorage.setItem('azureApiKey', key);
   if (url) localStorage.setItem('n8nProxyUrl', url);
   document.getElementById('settingsOverlay').classList.add('hidden');
   renderStep(state.currentStep);
 }
 
 function openSettings() {
-  document.getElementById('claudeKeyInput').value = getClaudeKey();
-  document.getElementById('n8nUrlInput').value = getN8nUrl();
+  document.getElementById('azureEndpointInput').value   = getAzureEndpoint();
+  document.getElementById('azureDeploymentInput').value = getAzureDeployment();
+  document.getElementById('azureKeyInput').value        = getAzureKey();
+  document.getElementById('n8nUrlInput').value          = getN8nUrl();
   document.getElementById('settingsOverlay').classList.remove('hidden');
 }
 
@@ -157,21 +171,28 @@ function renderNav() {
   }
 }
 
-// ── Claude API 호출 ───────────────────────────────────
+// ── Azure OpenAI API 호출 ─────────────────────────────
 async function callClaude(systemPrompt, userMessage) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const endpoint   = getAzureEndpoint();
+  const deployment = getAzureDeployment();
+  const apiKey     = getAzureKey();
+  if (!endpoint || !deployment || !apiKey) {
+    throw new Error('Azure 설정이 없어요. 우측 하단 ⚙️ 설정 버튼을 눌러 입력해주세요.');
+  }
+  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-08-01-preview`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'x-api-key': getClaudeKey(),
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-calls': 'true',
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userMessage },
+      ],
       max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+      temperature: 0.7,
     }),
   });
   if (!res.ok) {
@@ -179,7 +200,7 @@ async function callClaude(systemPrompt, userMessage) {
     throw new Error(err.error?.message || `API 오류 (${res.status})`);
   }
   const data = await res.json();
-  return data.content[0].text;
+  return data.choices[0].message.content;
 }
 
 // ── 채널톡 대화 로그 가져오기 (n8n 프록시) ────────────
@@ -520,7 +541,7 @@ function downloadJSON() {
 // ── 초기화 ────────────────────────────────────────────
 mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
-if (!getClaudeKey()) {
+if (!getAzureKey() || !getAzureEndpoint() || !getAzureDeployment()) {
   document.getElementById('settingsOverlay').classList.remove('hidden');
 } else {
   document.getElementById('settingsOverlay').classList.add('hidden');
